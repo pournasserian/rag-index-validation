@@ -1,0 +1,28 @@
+# Example: run the corpus and index checks and gate on retrieval against the golden set.
+# The judge step is left out of CI on purpose: the retrieval metrics need no LLM call, so a
+# run costs one embedding call per chunk and per question and nothing else.
+name: validate-index
+
+on:
+  pull_request:
+    paths: ["*.py", "golden.jsonl", "pyproject.toml"]
+  workflow_dispatch:
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    env:
+      OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+      # Leave unset for OpenAI; set to an OpenAI-compatible endpoint otherwise.
+      OPENAI_BASE_URL: ${{ vars.OPENAI_BASE_URL }}
+      EMBEDDING_MODEL: ${{ vars.EMBEDDING_MODEL || 'text-embedding-3-small' }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v5
+      - run: uv venv && uv pip install -e . || uv pip install openai chromadb tiktoken ranx datasketch numpy
+      - run: uv run python fetch_corpus.py
+      - run: uv run python chunk.py
+      - run: uv run python check_corpus.py
+      - run: uv run python build_index.py
+      - run: uv run python check_index.py
+      - run: uv run python eval_retrieval.py --min-recall10 0.90
